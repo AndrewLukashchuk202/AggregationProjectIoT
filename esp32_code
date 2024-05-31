@@ -1,0 +1,150 @@
+//All debugging and Adafruit code was written by Cameron Norie
+//Other functions, deep sleep mode was written by Andrew Lukashchuk
+
+#include "config.h"
+
+//libraries
+#include <driver/rtc_io.h>
+#include <driver/gpio.h>
+#include "esp_sleep.h"
+
+// set up the 'digital' feed
+AdafruitIO_Feed *waterLevelFeed = io.feed("water-filter-roots");
+AdafruitIO_Feed *leakLevelFeed = io.feed("water-filter-pump");
+
+// Pins Analogue
+#define WATER_LEVEL_SENSOR_PIN GPIO_NUM_2
+#define LEAK_SENSOR_PIN GPIO_NUM_4
+
+
+//#define TIME_TO_SLEEP 3600000000  // 1 hour in microseconds
+#define TIME_TO_SLEEP 10000000 // 10 second in microseconds
+#define LOW_WATER_THRESHOLD 10.0
+#define MEDIUM_WATER_THRESHOLD 30.0
+#define HIGH_WATER_THRESHOLD 60.0
+#define LEAK_THRESHOLD 50.0
+
+
+float maximumMoistureLevel = 100; 
+float currentMoistureLevel; 
+float currentLeakLevel;
+//float currentNutrientLevel;
+
+void moistureDetection() {
+ float moisturePercentage = currentMoistureLevel / maximumMoistureLevel;
+  
+  Serial.println(moisturePercentage);
+  if (moisturePercentage <= LOW_WATER_THRESHOLD) {
+    Serial.println("Pump - Moisture level below 10%");
+	// Trigger alert 
+    waterLevelFeed->save(moisturePercentage);
+    
+  } else if (moisturePercentage <= MEDIUM_WATER_THRESHOLD) {
+    Serial.println("Pump - Moisture level between 10% and 30%");
+    waterLevelFeed->save(moisturePercentage);
+    
+  } else if (moisturePercentage <= HIGH_WATER_THRESHOLD) {
+    Serial.println("Pump - Moisture level between 30% and 60%");
+    waterLevelFeed->save(moisturePercentage);
+    
+  } else {
+    Serial.println("Pump - Moisture level above 60%");
+    waterLevelFeed->save(moisturePercentage);
+    
+  }
+}
+
+void leakDetection() {
+
+  float leakLevel = currentLeakLevel / 10;
+  if (leakLevel >= LEAK_THRESHOLD) {
+    Serial.println("Warning - Leak Detection");
+    // Trigger alert (send data to Adafruit Dashboard)
+    leakLevelFeed->save(leakLevel);
+  }
+}
+
+//void nutrientLevelDetection() {
+	//float nutrientLevel = currentNutrientLevel;
+  
+ 	//if (nutrientLevel < LOW_NUTRIENT_THRESHOLD) {
+    	//Serial.println("Alert: Nutrient level too low!");
+    	// Trigger alert 
+  //}
+//}
+
+void setup() {
+  Serial.begin(115200);
+  while(! Serial);
+  Serial.println("Starting Setup Method");
+
+  // Initialize pins
+  Serial.println("Initializing Pins");
+  pinMode(WATER_LEVEL_SENSOR_PIN, INPUT); //Water level sensor
+  pinMode(LEAK_SENSOR_PIN, INPUT); //Leak detection level
+  Serial.println("Pins Initialized");
+  //pinMode(EC_SENSOR_PIN, INPUT); //Nutrient level sensor (EC sensor)
+  
+  // connect to io.adafruit.com
+  Serial.println("Connecting to Adafruit IO");
+  io.connect();
+
+  Serial.println("Beginning connection delay");
+  delay(5000); 
+  Serial.println("Ending connection delay");
+
+  //Serial.println(io.statusText());
+  
+  Serial.println("Entering wait for connection loop");
+   // wait for a connection
+   io.connect();
+  while(io.status() < AIO_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println("Exited wait for connection loop");
+
+  //Reconfigure pins after ESP32 wakes up
+  
+  Serial.println("Reconfiguring pins after ESP32 Wake Up");
+  rtc_gpio_deinit(WATER_LEVEL_SENSOR_PIN);
+  rtc_gpio_deinit(LEAK_SENSOR_PIN);
+
+  //Setting up the conditions for waking up
+  //esp_sleep_enable_ext1 _wakeup((1ULL << WATER_LEVEL_SENSOR_PIN) | (1ULL << LEAK_SENSOR_PIN), ESP_EXT1_WAKEUP_ANY_HIGH);
+
+  //esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP);
+
+
+  Serial.println("Checking Pins in setup method");
+  moistureDetection();
+  leakDetection();
+  Serial.println("Checking Pins Finished");
+  //Going to sleep
+  //esp_deep_sleep_start();
+  
+  Serial.println("Exiting Setup Loop");
+}
+
+void loop() {
+  Serial.println("Starting Loop Method");
+  
+  Serial.println("io.run()");
+  io.run();
+
+  Serial.println("Reading Analog Leak and Moisture Levels");
+  currentLeakLevel = analogRead(LEAK_SENSOR_PIN);
+  currentMoistureLevel = analogRead(WATER_LEVEL_SENSOR_PIN); 
+  Serial.println("Finished reading Analog Leak and Moisture Levels");
+
+
+  Serial.println("Sending moisture and leak levels to feed");
+  moistureDetection();
+  leakDetection();
+  
+  Serial.println("Beginning Loop Delay");
+  delay(50000);
+  Serial.println("Finishing Loop Delay");
+  
+  Serial.println("Reiterating Loop Method");
+}
